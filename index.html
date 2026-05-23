@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1a12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="FODMAP" />
+  <meta name="description" content="Escaneá productos y detectá ingredientes con FODMAPs al instante" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>FODMAP Scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500&display=swap" />
+  <style>
+    :root {
+      --bg:        #0f1a12;
+      --bg2:       #192a1c;
+      --bg3:       #1e3323;
+      --surface:   #243d28;
+      --border:    rgba(255,255,255,0.08);
+      --text:      #e8f0e9;
+      --muted:     #7a9e80;
+      --accent:    #6dde8a;
+      --accent2:   #3cb85a;
+      --danger:    #ff6b5b;
+      --warn:      #f5c542;
+      --safe:      #6dde8a;
+      --serif:     'DM Serif Display', Georgia, serif;
+      --sans:      'DM Sans', system-ui, sans-serif;
+      --safe-top:  env(safe-area-inset-top, 0px);
+      --safe-bot:  env(safe-area-inset-bottom, 0px);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; overscroll-behavior: none; }
+
+    /* ── Layout ── */
+    #app {
+      display: flex; flex-direction: column; height: 100%;
+      padding-top: var(--safe-top); padding-bottom: var(--safe-bot);
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { font-family: var(--serif); font-size: 22px; color: var(--accent); letter-spacing: -0.3px; }
+    .logo span { color: var(--muted); font-size: 13px; font-family: var(--sans); font-weight: 300; display: block; margin-top: -2px; }
+    .install-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); font-size: 12px; font-family: var(--sans);
+      padding: 6px 12px; border-radius: 20px; cursor: pointer;
+      display: none; align-items: center; gap: 5px;
+    }
+    .install-btn.visible { display: flex; }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 0; padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      flex: 1; text-align: center; padding: 8px 4px; font-size: 13px;
+      color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+      transition: color .2s, border-color .2s; font-weight: 400;
+    }
+    .tab.active { color: var(--accent); border-color: var(--accent); font-weight: 500; }
+
+    /* ── Pages ── */
+    .page { display: none; flex: 1; overflow-y: auto; flex-direction: column; }
+    .page.active { display: flex; }
+
+    /* ════ SCAN PAGE ════ */
+    #page-scan { gap: 0; }
+
+    .camera-area {
+      position: relative; background: #000;
+      width: 100%; aspect-ratio: 4/3; flex-shrink: 0; overflow: hidden;
+    }
+    #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cam-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .viewfinder {
+      width: 220px; height: 140px; position: relative;
+    }
+    .vf-corner {
+      position: absolute; width: 22px; height: 22px;
+    }
+    .vf-corner.tl { top:0; left:0; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .vf-corner.tr { top:0; right:0; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+    .vf-corner.bl { bottom:0; left:0; border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .vf-corner.br { bottom:0; right:0; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+    .scan-beam {
+      position: absolute; left: 0; right: 0; height: 1.5px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: beam 2s ease-in-out infinite;
+    }
+    @keyframes beam { 0%,100% { top: 10%; } 50% { top: 90%; } }
+
+    .cam-placeholder {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      background: var(--bg);
+    }
+    .cam-placeholder svg { opacity: 0.25; }
+    .cam-placeholder p { font-size: 14px; color: var(--muted); text-align: center; max-width: 220px; line-height: 1.5; }
+
+    .cam-controls {
+      display: flex; gap: 10px; padding: 14px 20px;
+      border-bottom: 1px solid var(--border); background: var(--bg2);
+    }
+    .btn-cam {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 13px; border-radius: 12px;
+      background: var(--accent); color: #0f1a12;
+      font-family: var(--sans); font-size: 14px; font-weight: 500;
+      border: none; cursor: pointer; transition: opacity .2s;
+    }
+    .btn-cam:active { opacity: 0.8; }
+    .btn-cam.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); flex: 0 0 auto; padding: 13px 16px; }
+    .btn-cam.danger { background: #2d1a18; color: var(--danger); border: 1px solid rgba(255,107,91,0.2); }
+
+    .manual-row { display: flex; gap: 10px; padding: 14px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+    .manual-row input {
+      flex: 1; background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); font-family: var(--sans); font-size: 14px;
+      padding: 10px 14px; border-radius: 10px; outline: none;
+    }
+    .manual-row input::placeholder { color: var(--muted); }
+    .manual-row input:focus { border-color: var(--accent2); }
+    .manual-row button {
+      background: var(--surface); border: 1px solid var(--border); color: var(--accent);
+      font-family: var(--sans); font-size: 13px; padding: 10px 16px;
+      border-radius: 10px; cursor: pointer; white-space: nowrap;
+    }
+
+    /* ── Result ── */
+    .result-area { flex: 1; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+    .no-result {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 8px; opacity: 0.5;
+    }
+    .no-result svg { opacity: 0.4; }
+    .no-result p { font-size: 14px; color: var(--muted); text-align: center; }
+
+    .result-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+      overflow: hidden;
+      animation: fadeUp .3s ease;
+    }
+    @keyframes fadeUp { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+
+    .result-top { display: flex; gap: 14px; padding: 16px; align-items: flex-start; }
+    .product-img {
+      width: 64px; height: 64px; flex-shrink: 0; border-radius: 10px;
+      background: var(--bg3); border: 1px solid var(--border);
+      overflow: hidden; display: flex; align-items: center; justify-content: center;
+    }
+    .product-img img { width: 100%; height: 100%; object-fit: contain; }
+    .product-img svg { opacity: 0.3; }
+    .product-meta { flex: 1; min-width: 0; }
+    .product-name { font-size: 16px; font-weight: 500; color: var(--text); line-height: 1.3; margin-bottom: 3px; }
+    .product-brand { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .product-code { font-size: 11px; color: var(--muted); font-family: monospace; }
+
+    .level-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: 500; padding: 5px 10px; border-radius: 20px;
+      margin-top: 6px;
+    }
+    .level-safe  { background: rgba(109,222,138,.12); color: var(--safe); border: 1px solid rgba(109,222,138,.25); }
+    .level-warn  { background: rgba(245,197,66,.12);  color: var(--warn); border: 1px solid rgba(245,197,66,.25); }
+    .level-danger{ background: rgba(255,107,91,.12);  color: var(--danger); border: 1px solid rgba(255,107,91,.25); }
+
+    .divider { height: 1px; background: var(--border); margin: 0 16px; }
+
+    .section { padding: 14px 16px; }
+    .section-label { font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
+
+    .ing-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ing-pill {
+      font-size: 12px; padding: 4px 9px; border-radius: 20px;
+      background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+    }
+    .ing-pill.danger { background: rgba(255,107,91,.1); border-color: rgba(255,107,91,.3); color: var(--danger); }
+    .ing-pill.warn   { background: rgba(245,197,66,.1); border-color: rgba(245,197,66,.3); color: var(--warn); }
+
+    .fodmap-list { display: flex; flex-direction: column; gap: 10px; }
+    .fodmap-row { display: flex; gap: 10px; align-items: flex-start; }
+    .f-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+    .f-dot.high { background: var(--danger); }
+    .f-dot.med  { background: var(--warn); }
+    .f-dot.low  { background: var(--safe); }
+    .f-name { font-size: 13px; font-weight: 500; color: var(--text); }
+    .f-trigger { font-size: 11px; color: var(--muted); }
+    .f-desc { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+
+    .no-fodmaps { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Loading ── */
+    .loading-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+      padding: 32px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+    }
+    .spinner {
+      width: 32px; height: 32px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-card p { font-size: 13px; color: var(--muted); }
+
+    .error-card {
+      background: rgba(255,107,91,.07); border: 1px solid rgba(255,107,91,.2);
+      border-radius: 16px; padding: 16px; display: flex; gap: 10px;
+      font-size: 13px; color: var(--danger); line-height: 1.5;
+    }
+
+    /* ── Examples ── */
+    .examples-wrap { padding: 0 20px 20px; }
+    .examples-label { font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
+    .example-list { display: flex; flex-direction: column; gap: 8px; }
+    .example-row {
+      display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      cursor: pointer; transition: border-color .2s;
+    }
+    .example-row:active { border-color: var(--accent2); }
+    .example-icon { font-size: 22px; }
+    .example-name { font-size: 14px; color: var(--text); flex: 1; }
+    .example-code { font-size: 11px; color: var(--muted); font-family: monospace; }
+    .example-chevron { color: var(--muted); font-size: 14px; }
+
+    /* ════ INFO PAGE ════ */
+    #page-info { padding: 20px; gap: 20px; }
+    .info-header { font-family: var(--serif); font-size: 28px; color: var(--accent); line-height: 1.2; }
+    .info-sub { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .info-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px;
+    }
+    .info-card h3 { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 10px; }
+    .fodmap-type-list { display: flex; flex-direction: column; gap: 10px; }
+    .ftype { display: flex; gap: 10px; }
+    .ftype-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+    .ftype-name { font-size: 13px; font-weight: 500; color: var(--text); }
+    .ftype-desc { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+    .disclaimer {
+      background: rgba(109,222,138,.05); border: 1px solid rgba(109,222,138,.15);
+      border-radius: 12px; padding: 14px; font-size: 12px; color: var(--muted); line-height: 1.6;
+    }
+    .disclaimer strong { color: var(--accent); }
+
+    /* cam status bar */
+    .cam-status { padding: 6px 20px; font-size: 12px; color: var(--muted); text-align: center; background: var(--bg2); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">
+      FODMAP
+      <span>Escáner de ingredientes</span>
+    </div>
+    <button class="install-btn" id="install-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16l-4-4h3V4h2v8h3l-4 4z"/><path d="M20 18H4"/></svg>
+      Instalar app
+    </button>
+  </header>
+
+  <nav class="tabs">
+    <div class="tab active" data-tab="scan">📷 Escanear</div>
+    <div class="tab" data-tab="info">ℹ️ ¿Qué son?</div>
+  </nav>
+
+  <!-- SCAN PAGE -->
+  <div class="page active" id="page-scan">
+    <div class="camera-area" id="camera-area">
+      <div class="cam-placeholder" id="cam-placeholder">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#6dde8a" stroke-width="1"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+        <p>Tocá "Iniciar cámara" para escanear un código de barras</p>
+      </div>
+      <video id="video" autoplay playsinline muted style="display:none;"></video>
+      <div class="cam-overlay" id="cam-overlay" style="display:none;">
+        <div class="viewfinder">
+          <div class="vf-corner tl"></div>
+          <div class="vf-corner tr"></div>
+          <div class="vf-corner bl"></div>
+          <div class="vf-corner br"></div>
+          <div class="scan-beam"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cam-status" id="cam-status"></div>
+
+    <div class="cam-controls">
+      <button class="btn-cam" id="cam-btn" onclick="toggleCamera()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><circle cx="12" cy="13" r="3"/></svg>
+        Iniciar cámara
+      </button>
+      <button class="btn-cam secondary" id="torch-btn" onclick="toggleTorch()" style="display:none;" title="Linterna">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9l-1 13h10L16 9"/><line x1="12" y1="13" x2="12" y2="17"/></svg>
+      </button>
+    </div>
+
+    <div class="manual-row">
+      <input type="number" id="barcode-input" placeholder="Código de barras manual..." inputmode="numeric" />
+      <button onclick="lookupManual()">Buscar</button>
+    </div>
+
+    <div class="result-area" id="result-area">
+      <div class="no-result" id="no-result">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6dde8a" stroke-width="1"><path d="M3 5h2M3 9h2M3 13h2M7 3v2M11 3v2M15 3v2M7 17v2M11 17v2M15 17v2M19 5h2M19 9h2M19 13h2M3 17h2M19 17h2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+        <p>El resultado del escaneo aparecerá acá</p>
+      </div>
+    </div>
+
+    <div class="examples-wrap">
+      <div class="examples-label">Ejemplos para probar</div>
+      <div class="example-list">
+        <div class="example-row" onclick="lookupBarcode('7790580491817')">
+          <span class="example-icon">🥛</span>
+          <div>
+            <div class="example-name">Leche entera</div>
+            <div class="example-code">7790580491817</div>
+          </div>
+          <span class="example-chevron">›</span>
+        </div>
+        <div class="example-row" onclick="lookupBarcode('7790387000441')">
+          <span class="example-icon">🍞</span>
+          <div>
+            <div class="example-name">Pan lactal</div>
+            <div class="example-code">7790387000441</div>
+          </div>
+          <span class="example-chevron">›</span>
+        </div>
+        <div class="example-row" onclick="lookupBarcode('5449000000996')">
+          <span class="example-icon">🥤</span>
+          <div>
+            <div class="example-name">Coca-Cola 500ml</div>
+            <div class="example-code">5449000000996</div>
+          </div>
+          <span class="example-chevron">›</span>
+        </div>
+        <div class="example-row" onclick="lookupBarcode('7792175005247')">
+          <span class="example-icon">🍫</span>
+          <div>
+            <div class="example-name">Chocolatada La Serenísima</div>
+            <div class="example-code">7792175005247</div>
+          </div>
+          <span class="example-chevron">›</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INFO PAGE -->
+  <div class="page" id="page-info">
+    <p class="info-header">¿Qué son los FODMAPs?</p>
+    <p class="info-sub">Son carbohidratos fermentables de cadena corta que el intestino delgado absorbe mal. En personas sensibles, pueden causar hinchazón, gases, dolor abdominal y cambios en el tránsito intestinal.</p>
+
+    <div class="info-card">
+      <h3>Tipos de FODMAPs</h3>
+      <div class="fodmap-type-list">
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--danger)"></div>
+          <div>
+            <div class="ftype-name">Fructosa</div>
+            <div class="ftype-desc">En exceso en miel, manzana, pera, mango, jarabe de maíz de alta fructosa.</div>
+          </div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--danger)"></div>
+          <div>
+            <div class="ftype-name">Lactosa</div>
+            <div class="ftype-desc">Azúcar de la leche: leche, yogur, ricota, queso fresco, suero de leche.</div>
+          </div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--danger)"></div>
+          <div>
+            <div class="ftype-name">Fructanos</div>
+            <div class="ftype-desc">Trigo, centeno, cebolla, ajo, puerro y muchas verduras comunes.</div>
+          </div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--warn)"></div>
+          <div>
+            <div class="ftype-name">GOS (Galactanos)</div>
+            <div class="ftype-desc">Legumbres: garbanzo, lenteja, porotos, soja, edamame.</div>
+          </div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--warn)"></div>
+          <div>
+            <div class="ftype-name">Polioles</div>
+            <div class="ftype-desc">Alcoholes del azúcar: sorbitol, manitol, xilitol, maltitol. También en duraznos y ciruelas.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-card">
+      <h3>Cómo usar el escáner</h3>
+      <div class="fodmap-type-list">
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--accent)"></div>
+          <div><div class="ftype-desc">Iniciá la cámara y apuntá al código de barras del producto.</div></div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--accent)"></div>
+          <div><div class="ftype-desc">La app busca el producto en la base de datos Open Food Facts y analiza los ingredientes.</div></div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--accent)"></div>
+          <div><div class="ftype-desc">Ves si el producto contiene FODMAPs, cuáles y en qué ingredientes están.</div></div>
+        </div>
+        <div class="ftype">
+          <div class="ftype-dot" style="background:var(--accent)"></div>
+          <div><div class="ftype-desc">Si el producto no está en la base, Claude lo analiza automáticamente.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      <strong>Aviso importante:</strong> Esta app es una herramienta orientativa. La detección de FODMAPs depende de la información disponible en la base de datos del producto. No reemplaza la evaluación de un nutricionista o médico especializado en síndrome de intestino irritable (SII).
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+<script>
+// ─── FODMAP Database ───────────────────────────────────────────────────────
+const FODMAP_DB = {
+  fructosa:    { level:'high', desc:'Fructosa en exceso — puede malabsorberse en el intestino delgado', triggers:['manzana','pera','miel','jarabe de maíz de alta fructosa','jarabe de maíz','sirope de agave','agave','mango','sandía'] },
+  lactosa:     { level:'high', desc:'Azúcar de la leche — difícil de digerir sin suficiente lactasa', triggers:['leche','lactosa','suero de leche','leche en polvo','crema','nata','yogur','queso fresco','ricota','cottage','buttermilk','whey','milk'] },
+  fructanos:   { level:'high', desc:'Cadenas de fructosa — trigo, cebolla, ajo y más', triggers:['trigo','harina de trigo','gluten','cebolla','ajo','puerro','cebolleta','cebollín','centeno','cebada','wheat','flour','garlic','onion'] },
+  galactanos:  { level:'med',  desc:'GOS — fermentados por bacterias intestinales causando gas', triggers:['garbanzo','lenteja','frijol','alubia','poroto','soja','tofu','edamame','legumbre','chickpea','lentil'] },
+  polioles:    { level:'med',  desc:'Alcoholes del azúcar — absorbidos lentamente en el intestino', triggers:['sorbitol','manitol','xilitol','maltitol','isomalt','eritritol','durazno','nectarina','ciruela','coliflor','sorb','manit','xylit','malti'] },
+  fos:         { level:'med',  desc:'FOS / Inulina — prebióticos fermentables', triggers:['achicoria','inulina','oligofructosa','fos','chicory','inulin'] }
+};
+
+function detectFodmaps(text) {
+  const lower = text.toLowerCase();
+  const found = [];
+  for (const [name, info] of Object.entries(FODMAP_DB)) {
+    for (const trigger of info.triggers) {
+      if (lower.includes(trigger)) {
+        if (!found.find(f => f.name === name)) found.push({ name, ...info, trigger });
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+function overallLevel(found) {
+  if (found.some(f => f.level === 'high')) return 'high';
+  if (found.some(f => f.level === 'med'))  return 'med';
+  return 'safe';
+}
+
+function tagIngredients(str) {
+  return str.split(/[,;]+/).map(part => {
+    const lower = part.toLowerCase().trim();
+    for (const [, info] of Object.entries(FODMAP_DB)) {
+      for (const trigger of info.triggers) {
+        if (lower.includes(trigger)) {
+          const cls = info.level === 'high' ? 'danger' : 'warn';
+          return `<span class="ing-pill ${cls}">${part.trim()}</span>`;
+        }
+      }
+    }
+    return `<span class="ing-pill">${part.trim()}</span>`;
+  }).join('');
+}
+
+// ─── Camera ───────────────────────────────────────────────────────────────
+let stream = null, cameraActive = false, torchOn = false;
+let barcodeDetector = null, scanInterval = null, scanning = false;
+
+async function toggleCamera() {
+  cameraActive ? stopCamera() : await startCamera();
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('cam-placeholder').style.display = 'none';
+    document.getElementById('cam-overlay').style.display = 'flex';
+    document.getElementById('cam-btn').innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Detener`;
+    document.getElementById('cam-btn').classList.add('danger');
+    document.getElementById('torch-btn').style.display = 'flex';
+    setStatus('Apuntá al código de barras del producto');
+    cameraActive = true;
+    startDetector(video);
+  } catch (e) {
+    setStatus('⚠ Sin acceso a la cámara — usá el código manual');
+  }
+}
+
+function stopCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (scanInterval) clearInterval(scanInterval);
+  stream = null; cameraActive = false; torchOn = false;
+  document.getElementById('video').style.display = 'none';
+  document.getElementById('cam-placeholder').style.display = 'flex';
+  document.getElementById('cam-overlay').style.display = 'none';
+  document.getElementById('cam-btn').innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><circle cx="12" cy="13" r="3"/></svg> Iniciar cámara`;
+  document.getElementById('cam-btn').classList.remove('danger');
+  document.getElementById('torch-btn').style.display = 'none';
+  setStatus('');
+}
+
+async function startDetector(video) {
+  // Try native BarcodeDetector first (Chrome/Android), fall back to ZXing (Safari/iOS)
+  if ('BarcodeDetector' in window) {
+    barcodeDetector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39'] });
+    scanInterval = setInterval(async () => {
+      if (scanning || !cameraActive) return;
+      scanning = true;
+      try {
+        const codes = await barcodeDetector.detect(video);
+        if (codes.length > 0) {
+          const code = codes[0].rawValue;
+          clearInterval(scanInterval);
+          setStatus(`✓ Código detectado: ${code}`);
+          document.getElementById('barcode-input').value = code;
+          await lookupBarcode(code);
+        }
+      } catch {}
+      scanning = false;
+    }, 400);
+  } else {
+    // ZXing fallback — works on Safari/iOS
+    try {
+      const hints = new Map();
+      const formats = [
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A,
+        ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.CODE_39,
+      ];
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+      const reader = new ZXing.MultiFormatReader();
+      reader.setHints(hints);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      scanInterval = setInterval(() => {
+        if (scanning || !cameraActive || video.readyState < 2) return;
+        scanning = true;
+        try {
+          canvas.width  = video.videoWidth  || 640;
+          canvas.height = video.videoHeight || 480;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const lum = new ZXing.RGBLuminanceSource(imgData.data, canvas.width, canvas.height);
+          const bin = new ZXing.HybridBinarizer(lum);
+          const bmp = new ZXing.BinaryBitmap(bin);
+          const result = reader.decode(bmp);
+          if (result) {
+            const code = result.getText();
+            clearInterval(scanInterval);
+            setStatus(`✓ Código detectado: ${code}`);
+            document.getElementById('barcode-input').value = code;
+            lookupBarcode(code);
+          }
+        } catch (e) {
+          // NotFoundException is normal when no barcode in frame — ignore
+        }
+        scanning = false;
+      }, 300);
+    } catch (e) {
+      setStatus('⚠ Error iniciando el escáner — usá el código manual');
+    }
+  }
+}
+
+async function toggleTorch() {
+  if (!stream) return;
+  const track = stream.getVideoTracks()[0];
+  try {
+    torchOn = !torchOn;
+    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+  } catch {}
+}
+
+function setStatus(msg) {
+  document.getElementById('cam-status').textContent = msg;
+}
+
+// ─── Lookup ───────────────────────────────────────────────────────────────
+function lookupManual() {
+  const v = document.getElementById('barcode-input').value.trim();
+  if (v) lookupBarcode(v);
+}
+
+async function lookupBarcode(code) {
+  document.getElementById('barcode-input').value = code;
+  showLoading();
+  // Switch to scan tab if on info tab
+  activateTab('scan');
+  // Scroll result into view
+  document.getElementById('result-area').scrollIntoView({ behavior: 'smooth' });
+
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+    const data = await res.json();
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      renderResult({
+        code,
+        name: p.product_name || p.product_name_es || 'Producto sin nombre',
+        brand: p.brands || '',
+        ingredientsText: p.ingredients_text || p.ingredients_text_es || '',
+        imageUrl: p.image_front_small_url || ''
+      });
+      return;
+    }
+  } catch {}
+
+  // Fallback: Claude
+  await aiLookup(code);
+}
+
+async function aiLookup(code) {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: `Código de barras: ${code}. Si conocés este producto, respondé SOLO con JSON sin markdown: {"name":"...","brand":"...","ingredientsText":"..."}. Si no lo conocés: {"unknown":true}`
+        }]
+      })
+    });
+    const d = await res.json();
+    const text = d.content.map(i => i.text || '').join('').replace(/```json|```/g,'').trim();
+    const parsed = JSON.parse(text);
+    if (parsed.unknown) { showError('Producto no encontrado en ninguna base de datos.'); return; }
+    renderResult({ code, name: parsed.name, brand: parsed.brand, ingredientsText: parsed.ingredientsText, imageUrl: '' });
+  } catch {
+    showError('No se pudo obtener información. Verificá la conexión o probá con otro código.');
+  }
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────
+function showLoading() {
+  document.getElementById('no-result').style.display = 'none';
+  document.getElementById('result-area').innerHTML = `
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p>Buscando producto y analizando ingredientes...</p>
+    </div>`;
+}
+
+function showError(msg) {
+  document.getElementById('result-area').innerHTML = `
+    <div class="error-card">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>${msg}</span>
+    </div>`;
+}
+
+function renderResult({ code, name, brand, ingredientsText, imageUrl }) {
+  const found = ingredientsText ? detectFodmaps(ingredientsText) : [];
+  const lvl   = overallLevel(found);
+
+  const badgeCls  = lvl === 'high' ? 'level-danger' : lvl === 'med' ? 'level-warn' : 'level-safe';
+  const badgeTxt  = lvl === 'high' ? '⚠ Alto en FODMAPs' : lvl === 'med' ? '◉ FODMAPs moderados' : '✓ Bajo en FODMAPs';
+
+  const imgHtml = imageUrl
+    ? `<img src="${imageUrl}" alt="${name}" />`
+    : `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6dde8a" stroke-width="1"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><circle cx="12" cy="13" r="3"/></svg>`;
+
+  const ingHtml = ingredientsText
+    ? `<div class="ing-wrap">${tagIngredients(ingredientsText)}</div>`
+    : `<p style="font-size:13px;color:var(--muted)">No disponible en esta fuente.</p>`;
+
+  const fodmapHtml = found.length
+    ? found.map(f => `
+      <div class="fodmap-row">
+        <div class="f-dot ${f.level}"></div>
+        <div>
+          <div class="f-name">${f.name.charAt(0).toUpperCase()+f.name.slice(1)} <span class="f-trigger">(por «${f.trigger}»)</span></div>
+          <div class="f-desc">${f.desc}</div>
+        </div>
+      </div>`).join('')
+    : `<p class="no-fodmaps">No se detectaron FODMAPs conocidos en los ingredientes listados.</p>`;
+
+  document.getElementById('result-area').innerHTML = `
+    <div class="result-card">
+      <div class="result-top">
+        <div class="product-img">${imgHtml}</div>
+        <div class="product-meta">
+          <div class="product-name">${name}</div>
+          ${brand ? `<div class="product-brand">${brand}</div>` : ''}
+          <div class="product-code">${code}</div>
+          <span class="level-badge ${badgeCls}">${badgeTxt}</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="section">
+        <div class="section-label">Ingredientes</div>
+        ${ingHtml}
+      </div>
+      ${found.length ? `<div class="divider"></div><div class="section"><div class="section-label">FODMAPs detectados</div><div class="fodmap-list">${fodmapHtml}</div></div>` : ''}
+    </div>`;
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────
+function activateTab(tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${tabId}`));
+}
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => activateTab(t.dataset.tab));
+});
+
+// ─── PWA Install ──────────────────────────────────────────────────────────
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-btn').classList.add('visible');
+});
+document.getElementById('install-btn').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') document.getElementById('install-btn').classList.remove('visible');
+  deferredPrompt = null;
+});
+
+// ─── Service Worker ───────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// ─── Enter key on manual input ────────────────────────────────────────────
+document.getElementById('barcode-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') lookupManual();
+});
+</script>
+</body>
+</html>
